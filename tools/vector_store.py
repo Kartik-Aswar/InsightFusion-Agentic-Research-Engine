@@ -1,56 +1,77 @@
+"""
+Vector Store — ChromaDB + SentenceTransformer for PDF chunk storage and retrieval.
+
+Uses cosine similarity (ChromaDB default) for semantic search.
+"""
+
 import chromadb
-from chromadb.config import Settings
 from sentence_transformers import SentenceTransformer
-import hashlib
 
 
 class VectorStore:
 
     def __init__(self, collection_name="pdf_collection"):
 
-        self.client = chromadb.PersistentClient(
-                                                    path="vector_db"
-                                                )
-
+        self.client = chromadb.PersistentClient(path="vector_db")
 
         self.collection = self.client.get_or_create_collection(collection_name)
 
+        # Embedding model (384-dim, fast, good for academic text)
         self.model = SentenceTransformer("all-MiniLM-L6-v2")
 
-    def _generate_id(self, text: str):
-        return hashlib.md5(text.encode()).hexdigest()
+    # -------------------------------------------------
+    # ADD DOCUMENTS
+    # -------------------------------------------------
 
-    def add_documents(self, documents: list, metadata: list):
+    def add_documents(self, documents: list, metadata: list) -> None:
 
         if not documents:
             return
 
-        embeddings = self.model.encode(documents).tolist()
+        embeddings = self.model.encode(
+            documents,
+            batch_size=32,
+            show_progress_bar=False
+        ).tolist()
 
         ids = [
-                    f"{metadata[i].get('source','unknown')}_{metadata[i].get('chunk_id', i)}"
-                    for i in range(len(documents))
-                ]
+            f"{metadata[i].get('source','unknown')}_{metadata[i].get('chunk_id', i)}"
+            for i in range(len(documents))
+        ]
 
-
-        self.collection.add(
+        # UPSERT prevents duplicate ID errors on re-runs
+        self.collection.upsert(
             documents=documents,
             embeddings=embeddings,
             metadatas=metadata,
             ids=ids
         )
 
+    # -------------------------------------------------
+    # QUERY VECTOR DATABASE
+    # -------------------------------------------------
 
-    def query(self, query_text: str, top_k: int = 5):
+    def query(self, query_text: str, top_k: int = 25) -> dict:
+        """
+        Semantic search using cosine similarity (ChromaDB default).
+        Returns top_k most relevant chunks.
+        """
 
         if not query_text:
             return {}
 
-        embedding = self.model.encode([query_text]).tolist()
+        query_embedding = self.model.encode([query_text]).tolist()
 
         results = self.collection.query(
-            query_embeddings=embedding,
+            query_embeddings=query_embedding,
             n_results=top_k
         )
+
+        # Safety check
+        if not results or "documents" not in results:
+            return {"documents": [[]]}
+
+        if results["documents"] is None:
+            return {"documents": [[]]}
 
         return results

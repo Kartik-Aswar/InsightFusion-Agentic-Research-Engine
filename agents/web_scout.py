@@ -1,11 +1,12 @@
+"""
+Web Scout Agent — performs live web research and extracts structured claims.
+"""
+
 from crewai import Agent
 from .base_llm import llm
 
 from tools.web_search_tool import WebSearchToolWrapper
 from tools.credibility_tool import CredibilityScorer
-from dotenv import load_dotenv
-
-load_dotenv()
 
 
 class WebScoutAgent:
@@ -22,12 +23,16 @@ class WebScoutAgent:
                 "and extracting verifiable claims from structured web results. "
                 "ALWAYS use the search tool for real web data."
             ),
-            tools=[self.search_tool.tool],   # MOST IMPORTANT LINE
+            tools=[self.search_tool.tool],
             llm=llm,
-            verbose=True
+            verbose=True,
         )
 
-    def perform_search(self, query: str):
+    def perform_search(self, query: str) -> list:
+        """
+        Deterministic web search (outside of CrewAI agent loop).
+        Calls Serper API directly and scores credibility.
+        """
 
         raw_results = self.search_tool.search(query)
 
@@ -40,17 +45,20 @@ class WebScoutAgent:
 
             snippet = item.get("snippet") or item.get("title")
 
+            if not snippet:
+                continue
+
             credibility = self.credibility_scorer.score(
                 url=item.get("url", ""),
-                publication_date=None
+                publication_date=None,
             )
 
             structured_claims.append({
                 "claim": snippet,
-                "source": item.get("url"),
+                "source": item.get("url", ""),
                 "publication_date": None,
                 "source_type": "Web",
-                "credibility_score": credibility
+                "credibility_score": credibility,
             })
 
         return structured_claims

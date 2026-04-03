@@ -1,3 +1,14 @@
+"""
+Research Flow — main orchestration pipeline.
+
+Steps:
+1. Get query (CLI or injected by Streamlit)
+2. Deterministic web search + PDF indexing/retrieval
+3. Run CrewAI crew (planner → web → doc → conflict → report)
+4. Parse outputs, handle conflicts with recursion
+5. Calculate confidence and save final outputs
+"""
+
 import json
 import os
 import glob
@@ -12,8 +23,58 @@ from agents.web_scout import WebScoutAgent
 
 from tools.pdf_tool import PDFProcessor
 from tools.vector_store import VectorStore
-from tools.clustering_tool import InsightClusterer
 
+
+# ---------------------------------------------------------
+# HELPER: Safe JSON parser for LLM task outputs
+# ---------------------------------------------------------
+
+def safe_json_parse(task_outputs, index: int) -> dict | list | None:
+    """
+    Safely parse JSON from a CrewAI task output at the given index.
+    Handles markdown code fences, partial JSON, and malformed output.
+    """
+
+    try:
+        if index >= len(task_outputs):
+            return None
+
+        raw = task_outputs[index].raw.strip()
+
+        # Remove markdown code fences if LLM adds them
+        raw = raw.replace("```json", "").replace("```", "").strip()
+
+        # Try direct parse first
+        try:
+            return json.loads(raw)
+        except json.JSONDecodeError:
+            pass
+
+        # Fallback → extract JSON block (object OR array)
+        match = re.search(r"(\{.*\}|\[.*\])", raw, re.DOTALL)
+        if match:
+            return json.loads(match.group())
+
+        return None
+
+    except Exception:
+        return None
+
+
+# ---------------------------------------------------------
+# TASK OUTPUT KEYS (readable names instead of magic indices)
+# ---------------------------------------------------------
+
+TASK_PLANNING = 0
+TASK_WEB = 1
+TASK_DOCUMENT = 2
+TASK_CONFLICT = 3
+TASK_REPORT = 4
+
+
+########################################################
+# RESEARCH FLOW
+########################################################
 
 class ResearchFlow(Flow[ResearchState]):
 
@@ -26,7 +87,6 @@ class ResearchFlow(Flow[ResearchState]):
 
         self.pdf_processor = PDFProcessor()
         self.vector_store = VectorStore()
-        self.clusterer = InsightClusterer()
 
         self.pdf_indexed = False  # Prevent re-indexing during recursion
 
@@ -39,7 +99,14 @@ class ResearchFlow(Flow[ResearchState]):
 
         print("\n===== Agentic AI Deep Research System =====\n")
 
+        # If query already provided (Streamlit), skip input
+        if self.state.query and self.state.query.strip():
+            print(f"Research initiated for: {self.state.query}\n")
+            return self.state
+
+        # Otherwise ask from CLI
         self.state.query = input("Enter research query: ").strip()
+
         self.state.recursion_count = 0
         self.state.conflicts_detected = False
 
@@ -48,13 +115,15 @@ class ResearchFlow(Flow[ResearchState]):
         return self.state
 
     # -----------------------------------------------------
-    # STEP 2: MAIN LOOP
+    # STEP 2: MAIN RESEARCH LOOP
     # -----------------------------------------------------
 
     @listen(get_query)
     def execute_research(self, state: ResearchState):
 
         knowledge_store = KnowledgeStore(state)
+
+        task_outputs = None
 
         while True:
 
@@ -71,7 +140,9 @@ class ResearchFlow(Flow[ResearchState]):
                 for claim in structured_claims:
                     knowledge_store.add_web_claim(claim)
 
-                knowledge_store.add_reasoning_step("Web search completed.")
+                knowledge_store.add_reasoning_step(
+                    f"Web search completed. {len(structured_claims)} claims found."
+                )
 
             except Exception as e:
                 knowledge_store.add_reasoning_step(
@@ -85,7 +156,15 @@ class ResearchFlow(Flow[ResearchState]):
             try:
                 if not self.pdf_indexed:
 
-                    pdf_files = glob.glob("input_pdfs/*.pdf")
+                    pdf_dir = os.path.join(
+                        os.path.dirname(os.path.abspath(__file__)),
+                        "..", "input_pdfs"
+                    )
+                    pdf_files = glob.glob(os.path.join(pdf_dir, "*.pdf"))
+
+                    # Fallback to relative path
+                    if not pdf_files:
+                        pdf_files = glob.glob("input_pdfs/*.pdf")
 
                     if pdf_files:
                         print(f"Processing {len(pdf_files)} PDFs...\n")
@@ -99,7 +178,7 @@ class ResearchFlow(Flow[ResearchState]):
 
                             if "error" in pdf_data:
                                 knowledge_store.add_reasoning_step(
-                                    f"Error processing PDF: {pdf_path}"
+                                    f"Error processing PDF: {pdf_path} - {pdf_data['error']}"
                                 )
                                 continue
 
@@ -120,9 +199,9 @@ class ResearchFlow(Flow[ResearchState]):
 
                                 all_chunks.append(chunk_text)
                                 metadata.append({
-                                    "source": pdf_path,
-                                    "chunk_id": chunk_id,
-                                    "page_number": page_number
+                                    "source": str(pdf_path),
+                                    "chunk_id": str(chunk_id),
+                                    "page_number": int(page_number),
                                 })
 
                         if all_chunks:
@@ -131,7 +210,7 @@ class ResearchFlow(Flow[ResearchState]):
                         self.pdf_indexed = True
 
                         knowledge_store.add_reasoning_step(
-                            "PDF indexing completed."
+                            f"PDF indexing completed. {len(all_chunks)} chunks from {len(pdf_files)} PDFs indexed."
                         )
 
                     else:
@@ -139,28 +218,52 @@ class ResearchFlow(Flow[ResearchState]):
                             "No PDFs found in input_pdfs folder."
                         )
 
-                # Semantic Retrieval
-                results = self.vector_store.query(state.query)
+                # =====================================================
+                # SEMANTIC RETRIEVAL (with metadata for citations)
+                # =====================================================
+
+                results = self.vector_store.query(state.query, top_k=20)
 
                 retrieved_chunks = []
+                retrieved_metadatas = []
 
                 if results and "documents" in results:
                     retrieved_chunks = results["documents"][0]
+                    retrieved_metadatas = results.get("metadatas", [[]])[0]
 
-                if retrieved_chunks:
+                print(f"Retrieved {len(retrieved_chunks)} relevant chunks via semantic search")
 
-                    clustered = self.clusterer.cluster(retrieved_chunks)
+                # =====================================================
+                # ENRICH CHUNKS WITH SOURCE METADATA FOR CITATIONS
+                # =====================================================
+                # This is critical — without metadata, the agent cannot
+                # produce proper citations (filename + page number).
 
-                    for cluster_id, texts in clustered.items():
-                        for text in texts:
-                            knowledge_store.add_document_insight({
-                                "document_title": f"Cluster {cluster_id}",
-                                "key_findings": text,
-                                "statistics": None,
-                                "methodology": None,
-                                "limitations": None,
-                                "confidence_level": "High"
-                            })
+                enriched_chunks = []
+
+                for i, chunk_text in enumerate(retrieved_chunks):
+
+                    if i < len(retrieved_metadatas):
+                        meta = retrieved_metadatas[i]
+                        source_file = os.path.basename(str(meta.get("source", "Unknown PDF")))
+                        page_num = meta.get("page_number", "?")
+                    else:
+                        source_file = "Unknown PDF"
+                        page_num = "?"
+
+                    # Format: include source + page so agent can cite properly
+                    enriched = (
+                        f"[Source: {source_file}, Page {page_num}]\n"
+                        f"{chunk_text}"
+                    )
+                    enriched_chunks.append(enriched)
+
+                # Store enriched chunks (with metadata) for crew
+                state.retrieved_documents = enriched_chunks[:20]
+
+                knowledge_store.add_reasoning_step(
+                    f"Semantic retrieval done. {len(enriched_chunks)} chunks with source metadata prepared."
+                )
 
             except Exception as e:
                 knowledge_store.add_reasoning_step(
@@ -172,72 +275,53 @@ class ResearchFlow(Flow[ResearchState]):
             # =====================================================
 
             try:
-                crew_builder = ResearchCrew(state.query)
+                crew_builder = ResearchCrew(
+                    query=state.query,
+                    retrieved_documents=state.retrieved_documents,
+                )
+
                 crew, task_map = crew_builder.build()
+
                 result = crew.kickoff()
+
                 task_outputs = result.tasks_output
+
             except Exception as e:
                 knowledge_store.add_reasoning_step(
                     f"Crew execution failed: {str(e)}"
                 )
+                task_outputs = None
                 break
 
             # =====================================================
             # 4️⃣ Parse Outputs Safely
             # =====================================================
 
-
-            def safe_json_parse(index):
-                try:
-                    raw = task_outputs[index].raw.strip()
-
-                    # remove markdown if LLM adds it
-                    raw = raw.replace("```json", "").replace("```", "").strip()
-
-                    # try direct parse first
-                    try:
-                        return json.loads(raw)
-                    except:
-                        pass
-
-                    # fallback → extract JSON block (object OR array)
-                    match = re.search(r"(\{.*\}|\[.*\])", raw, re.DOTALL)
-                    if match:
-                        return json.loads(match.group())
-
-                    return None
-
-                except Exception:
-                    return None
-
-
-
             # Planning
-            plan_output = safe_json_parse(0)
+            plan_output = safe_json_parse(task_outputs, TASK_PLANNING)
             if plan_output:
                 state.research_plan = plan_output
 
             # Web claims
-            web_output = safe_json_parse(1)
+            web_output = safe_json_parse(task_outputs, TASK_WEB)
             if web_output:
-                for claim in web_output:
-                    knowledge_store.add_web_claim(claim)
+                if isinstance(web_output, list):
+                    for claim in web_output:
+                        knowledge_store.add_web_claim(claim)
+                elif isinstance(web_output, dict):
+                    knowledge_store.add_web_claim(web_output)
 
             # Document insights
-            doc_output = safe_json_parse(2)
-
+            doc_output = safe_json_parse(task_outputs, TASK_DOCUMENT)
             if doc_output:
-
                 if isinstance(doc_output, dict):
                     knowledge_store.add_document_insight(doc_output)
-
                 elif isinstance(doc_output, list):
                     for doc in doc_output:
                         knowledge_store.add_document_insight(doc)
 
-
             # Conflict detection
-            conflict_output = safe_json_parse(3)
+            conflict_output = safe_json_parse(task_outputs, TASK_CONFLICT)
             if conflict_output and conflict_output.get("conflicts_detected") is True:
 
                 for conflict in conflict_output.get("conflict_details", []):
@@ -247,47 +331,53 @@ class ResearchFlow(Flow[ResearchState]):
                         severity=conflict.get("severity", "Medium"),
                     )
 
-                if knowledge_store.can_recurse():
-
-                    print("\n⚠ Conflict detected. Running recursive research...\n")
-
+                if knowledge_store.can_recurse() and conflict_output.get("conflict_details", []):
+                    print("\n⚠ Conflict detected. Adapting query for self-correction...\n")
+                    
+                    # Make self-correction SMART: dynamically adapt the query
+                    # so the web scout and RAG engine specifically search for resolutions!
+                    conflict_issues = [c.get("issue") for c in conflict_output.get("conflict_details", [])]
+                    conflict_str = " | ".join(conflict_issues)
+                    
+                    # Give strict instructions to the query to resolve it!
+                    state.query = f"{state.query}. (CRITICAL UPDATE: You previously found a conflict. You MUST now prioritize resolving this specific conflict: {conflict_str})"
+                    
                     knowledge_store.increment_recursion()
                     knowledge_store.clear_conflicts()
-
                     continue
+                else:
+                    print("\n⚠ Conflicts securely logged. Passing to Report Generator for final synthesis...\n")
 
-            break  # Exit loop if no recursion
-
+            break  # Exit loop when conflicts are analyzed or recursion maxed
 
         # =====================================================
         # 5️⃣ Final Report
         # =====================================================
 
-        # First calculate REAL system confidence
+        # Calculate REAL system confidence
         confidence = knowledge_store.calculate_confidence()
 
         knowledge_store.add_reasoning_step(
             f"Final confidence score: {confidence}%"
         )
 
-        # Inject confidence into state so report can use it
+        # Inject confidence into state
         if isinstance(state.research_plan, dict):
             state.research_plan["system_confidence_score"] = confidence
             state.research_plan["confidence_scale"] = "0-100"
 
-        # Replace confidence section inside report safely
-        # replace ONLY confidence line (safe)
+        # Extract and enhance report
+        if task_outputs and len(task_outputs) > TASK_REPORT:
 
-        if task_outputs:
-            report_text = task_outputs[4].raw.strip()
+            report_text = task_outputs[TASK_REPORT].raw.strip()
 
-                # Add system confidence at END (clean & safe)
             report_text += f"\n\n---\nSystem Confidence Score: {confidence}% (Calculated)\n"
 
             state.final_report = report_text
+
         else:
-            state.final_report = ""
-        
+            state.final_report = "Report generation failed. Crew did not return valid output."
+
         self.save_outputs(state)
 
         print("\n===== Research Completed =====")
@@ -299,7 +389,7 @@ class ResearchFlow(Flow[ResearchState]):
     # OUTPUT SAVING
     # -----------------------------------------------------
 
-    def save_outputs(self, state: ResearchState):
+    def save_outputs(self, state: ResearchState) -> None:
 
         os.makedirs("output", exist_ok=True)
 
@@ -320,6 +410,10 @@ class ResearchFlow(Flow[ResearchState]):
             "query": state.query,
             "confidence_score": state.confidence_score,
             "recursion_count": state.recursion_count,
+            "total_web_claims": len(state.web_claims),
+            "total_document_insights": len(state.document_insights),
+            "total_pdf_chunks": len(state.pdf_chunks),
+            "conflicts_found": len(state.conflicts),
         }
 
         with open("output/summary.json", "w", encoding="utf-8") as f:

@@ -1,5 +1,9 @@
+"""
+Research State — Pydantic models for all state managed by the research flow.
+"""
+
 from pydantic import BaseModel, Field
-from typing import List, Dict, Any, Set
+from typing import List, Dict, Any, Set, Tuple
 
 
 class Claim(BaseModel):
@@ -45,16 +49,19 @@ class ResearchState(BaseModel):
     # Planning output
     research_plan: Dict[str, Any] = Field(default_factory=dict)
 
+    # Retrieved document chunks for RAG context
+    retrieved_documents: List[str] = Field(default_factory=list)
+
     # Evidence stores
     web_claims: List[Claim] = Field(default_factory=list)
     document_insights: List[DocumentInsight] = Field(default_factory=list)
-    document_insights_seen: set = Field(default_factory=set)
 
-    pdf_chunks: List[PDFChunk] = Field(default_factory=list)
-
-    # Deduplication tracking
+    # Deduplication tracking (FIX: proper Pydantic types)
+    document_insights_seen: Set[Tuple[str, str]] = Field(default_factory=set)
     web_sources_seen: Set[str] = Field(default_factory=set)
     chunk_ids_seen: Set[str] = Field(default_factory=set)
+
+    pdf_chunks: List[PDFChunk] = Field(default_factory=list)
 
     # Evidence mapping for cross-reference
     evidence_map: Dict[str, List[str]] = Field(default_factory=dict)
@@ -65,7 +72,7 @@ class ResearchState(BaseModel):
 
     # Recursive control
     recursion_count: int = 0
-    max_recursions: int = 2
+    max_recursions: int = 1
 
     # Reasoning trace (important for explainability)
     reasoning_trace: List[str] = Field(default_factory=list)

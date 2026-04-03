@@ -1,3 +1,8 @@
+"""
+Credibility Scorer — heuristic-based URL authority scoring.
+Scores range from 0.0 (unreliable) to 1.0 (highly authoritative).
+"""
+
 from datetime import datetime
 from urllib.parse import urlparse
 
@@ -14,14 +19,19 @@ class CredibilityScorer:
             "ieee.org",
             "springer.com",
             "who.int",
-            "worldbank.org"
+            "worldbank.org",
+            "arxiv.org",
+            "acm.org",
+            "nih.gov",
         ]
 
         self.low_authority_indicators = [
             "blog",
             "medium.com",
             "wordpress",
-            "opinion"
+            "opinion",
+            "quora.com",
+            "reddit.com",
         ]
 
     def score(self, url: str, publication_date: str | None = None) -> float:
@@ -31,8 +41,11 @@ class CredibilityScorer:
 
         score = 0.5
 
-        parsed = urlparse(url)
-        domain = parsed.netloc.lower()
+        try:
+            parsed = urlparse(url)
+            domain = parsed.netloc.lower()
+        except Exception:
+            return 0.3
 
         # HTTPS boost
         if parsed.scheme == "https":
@@ -41,10 +54,12 @@ class CredibilityScorer:
         for trusted in self.high_authority_domains:
             if trusted in domain:
                 score += 0.3
+                break  # Only apply once
 
         for weak in self.low_authority_indicators:
             if weak in domain:
                 score -= 0.2
+                break  # Only apply once
 
         # Recency factor
         if publication_date:
@@ -58,7 +73,7 @@ class CredibilityScorer:
                     score += 0.1
                 elif age > 5:
                     score -= 0.1
-            except:
+            except (ValueError, IndexError):
                 pass
 
         return round(max(0.0, min(score, 1.0)), 2)

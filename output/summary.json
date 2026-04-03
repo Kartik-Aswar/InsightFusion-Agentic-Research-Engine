@@ -1,5 +1,9 @@
 {
     "query": "What are the key design patterns used in autonomous AI research agents?",
-    "confidence_score": 83.08,
-    "recursion_count": 2
+    "confidence_score": 84.38,
+    "recursion_count": 0,
+    "total_web_claims": 18,
+    "total_document_insights": 15,
+    "total_pdf_chunks": 494,
+    "conflicts_found": 0
 }

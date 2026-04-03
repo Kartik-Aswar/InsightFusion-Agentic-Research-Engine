@@ -1,3 +1,8 @@
+"""
+Knowledge Store — manages all evidence, conflicts, and confidence scoring.
+Acts as the central intelligence layer over ResearchState.
+"""
+
 from typing import List
 from urllib.parse import urlparse
 
@@ -16,7 +21,7 @@ class KnowledgeStore:
         self.state = state
 
     # -----------------------------------
-    # SOURCE AUTHORITY INTELLIGENCE (NEW)
+    # SOURCE AUTHORITY INTELLIGENCE
     # -----------------------------------
 
     def _source_authority_boost(self, url: str) -> float:
@@ -44,6 +49,8 @@ class KnowledgeStore:
                 "ieee.org",
                 "acm.org",
                 "springer.com",
+                "nih.gov",
+                "pubmed.ncbi",
             ]):
                 return 0.15
 
@@ -61,9 +68,12 @@ class KnowledgeStore:
             if any(x in domain for x in [
                 "anthropic.com",
                 "deepmind.com",
-                "openai.com",
             ]):
                 return 0.08
+
+            # Government / education
+            if ".gov" in domain or ".edu" in domain:
+                return 0.12
 
             # Medium / personal blogs
             if "medium.com" in domain or "blog" in domain:
@@ -78,7 +88,7 @@ class KnowledgeStore:
     # WEB EVIDENCE MANAGEMENT
     # -----------------------------------
 
-    def add_web_claim(self, claim_data: dict):
+    def add_web_claim(self, claim_data: dict) -> None:
 
         try:
             claim = Claim(**claim_data)
@@ -96,16 +106,16 @@ class KnowledgeStore:
 
             self.state.evidence_map[claim.claim].append(claim.source)
 
-        except Exception:
+        except Exception as e:
             self.state.reasoning_trace.append(
-                "Web claim validation failed."
+                f"Web claim validation failed: {str(e)}"
             )
 
     # -----------------------------------
     # RAW PDF CHUNK MANAGEMENT
     # -----------------------------------
 
-    def add_pdf_chunk(self, chunk_id: str, source_file: str, text: str):
+    def add_pdf_chunk(self, chunk_id: str, source_file: str, text: str) -> None:
 
         if chunk_id in self.state.chunk_ids_seen:
             return
@@ -120,16 +130,16 @@ class KnowledgeStore:
             self.state.pdf_chunks.append(chunk)
             self.state.chunk_ids_seen.add(chunk_id)
 
-        except Exception:
+        except Exception as e:
             self.state.reasoning_trace.append(
-                "PDF chunk validation failed."
+                f"PDF chunk validation failed: {str(e)}"
             )
 
     # -----------------------------------
     # DOCUMENT INSIGHTS
     # -----------------------------------
 
-    def add_document_insight(self, doc_data: dict):
+    def add_document_insight(self, doc_data: dict) -> None:
 
         if not isinstance(doc_data, dict):
             self.add_reasoning_step(
@@ -138,16 +148,21 @@ class KnowledgeStore:
             return
 
         try:
+            # Normalize common LLM output field variations
             if "title" in doc_data and "document_title" not in doc_data:
-                doc_data["document_title"] = doc_data["title"]
+                doc_data["document_title"] = doc_data.pop("title")
 
             if "findings" in doc_data and "key_findings" not in doc_data:
-                doc_data["key_findings"] = doc_data["findings"]
+                doc_data["key_findings"] = doc_data.pop("findings")
 
             doc_data.setdefault("document_title", "Unknown Document")
             doc_data.setdefault("key_findings", "No findings provided")
 
-            insight = DocumentInsight(**doc_data)
+            # Remove unexpected fields that would fail Pydantic validation
+            allowed_fields = {f.alias or name for name, f in DocumentInsight.model_fields.items()}
+            cleaned_data = {k: v for k, v in doc_data.items() if k in allowed_fields}
+
+            insight = DocumentInsight(**cleaned_data)
 
             key = (insight.document_title, insight.key_findings)
 
@@ -164,12 +179,12 @@ class KnowledgeStore:
     # CONFLICT MANAGEMENT
     # -----------------------------------
 
-    def register_conflict(self, issue: str, sources: List[str], severity: str):
+    def register_conflict(self, issue: str, sources: List[str], severity: str) -> None:
 
         severity = severity.capitalize()
 
         if severity not in ["High", "Medium", "Low"]:
-            severity = "Medium"
+            severity = "Low"
 
         conflict = ConflictRecord(
             issue=issue,
@@ -180,15 +195,16 @@ class KnowledgeStore:
         self.state.conflicts.append(conflict)
         self.state.conflicts_detected = True
 
-    def clear_conflicts(self):
-        self.state.conflicts = []
+    def clear_conflicts(self) -> None:
+        # We NO LONGER clear the actual conflict list so they get saved to conflicts.json
+        # We only reset the flag to allow the next iteration to evaluate fresh
         self.state.conflicts_detected = False
 
     # -----------------------------------
     # RECURSION CONTROL
     # -----------------------------------
 
-    def increment_recursion(self):
+    def increment_recursion(self) -> None:
         self.state.recursion_count += 1
 
     def can_recurse(self) -> bool:
@@ -198,20 +214,20 @@ class KnowledgeStore:
     # REASONING TRACE
     # -----------------------------------
 
-    def add_reasoning_step(self, step: str):
+    def add_reasoning_step(self, step: str) -> None:
         self.state.reasoning_trace.append(step)
 
     # -----------------------------------
     # CONFIDENCE SCORING
     # -----------------------------------
 
-    def calculate_confidence(self):
+    def calculate_confidence(self) -> float:
 
         if not self.state.web_claims and not self.state.pdf_chunks:
             self.state.confidence_score = 0.0
             return 0.0
 
-        # --- Web credibility (UPGRADED WITH AUTHORITY) ---
+        # --- Web credibility (with authority boost) ---
         if self.state.web_claims:
 
             adjusted_scores = []
@@ -229,9 +245,10 @@ class KnowledgeStore:
 
         independent_sources = len(self.state.web_sources_seen)
 
-        # Use insights strength
-        pdf_strength = min(len(self.state.document_insights) / 15, 1.0)
+        # PDF evidence strength
+        pdf_strength = min(len(self.state.pdf_chunks) / 15, 1.0)
 
+        # Document insights strength
         doc_strength = min(len(self.state.document_insights) / 10, 1.0)
 
         # Conflict penalty
@@ -244,6 +261,7 @@ class KnowledgeStore:
             else:
                 severity_penalty += 0.03
 
+        # Weighted confidence formula
         confidence = (
             (avg_credibility * 0.4)
             + (min(independent_sources / 10, 1.0) * 0.25)

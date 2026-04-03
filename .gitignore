@@ -1,5 +1,24 @@
+# Virtual environment
 .venv/
+
+# Python cache
 __pycache__/
-.env
 *.pyc
-vector_db/      
+*.pyo
+
+# Environment variables (NEVER commit API keys)
+.env
+
+# Vector database (regenerated at runtime)
+vector_db/
+
+# Output files (regenerated per run)
+output/
+
+# Log files
+logs/
+
+# IDE files
+.vscode/
+.idea/
+*.swp
