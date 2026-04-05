@@ -266,14 +266,6 @@ class ResearchCrew:
                 7. **Conclusion**
                    Summarize the overall answer to the research question.
 
-                8. **Research Reliability Discussion**
-                   Analyze the reliability of the findings based on the nature and consistency of the primary evidence sources, citing the specific PDF filenames and web resources used. Discuss the strength of the evidence and acknowledge any analytical limitations.
-
-                9. **References**
-                   List all sources cited in the report:
-                   - PDF sources with filenames and relevant pages
-                   - Web sources with full URLs
-
                 CRITICAL RULES:
                 - The PDF evidence above is your PRIMARY source — use it FIRST
                 - READ the actual PDF text provided and extract specific facts, numbers, and findings
@@ -290,12 +282,36 @@ class ResearchCrew:
             context=[web_task, document_task, conflict_task],
         )
 
+        reliability_task = Task(
+            description=f"""
+                Generate a standalone analytical section assessing the reliability of the evidence.
+
+                Research Query: "{self.query}"
+
+                STRUCTURE:
+
+                1. **Research Reliability Discussion**
+                   Analyze the reliability of the findings based on the nature and consistency of the primary evidence sources, citing the specific PDF filenames and web resources used. Discuss the strength of the evidence and acknowledge any analytical limitations.
+
+                2. **References**
+                   List all sources cited or retrieved during research:
+                   - PDF sources with exact filenames and relevant pages
+                   - Web sources with full URLs
+
+                Write in formal academic tone. Do not output JSON.
+            """,
+            expected_output="A structured reliability assessment and comprehensive references list.",
+            agent=report_generator,
+            context=[report_task],  # It naturally relies on the completed report.
+        )
+
         return {
             "planning": planning_task,
             "web": web_task,
             "document": document_task,
             "conflict": conflict_task,
             "report": report_task,
+            "reliability": reliability_task,
         }
 
     # -------------------------------------------------

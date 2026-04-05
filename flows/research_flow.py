@@ -70,6 +70,7 @@ TASK_WEB = 1
 TASK_DOCUMENT = 2
 TASK_CONFLICT = 3
 TASK_REPORT = 4
+TASK_RELIABILITY = 5
 
 
 ########################################################
@@ -370,10 +371,11 @@ class ResearchFlow(Flow[ResearchState]):
         if task_outputs and len(task_outputs) > TASK_REPORT:
 
             report_text = task_outputs[TASK_REPORT].raw.strip()
-
             report_text += f"\n\n---\nSystem Confidence Score: {confidence}% (Calculated)\n"
-
             state.final_report = report_text
+
+            if len(task_outputs) > TASK_RELIABILITY:
+                state.reliability_report = task_outputs[TASK_RELIABILITY].raw.strip()
 
         else:
             state.final_report = "Report generation failed. Crew did not return valid output."
@@ -395,6 +397,9 @@ class ResearchFlow(Flow[ResearchState]):
 
         with open("output/final_report.txt", "w", encoding="utf-8") as f:
             f.write(state.final_report)
+
+        with open("output/reliability_report.txt", "w", encoding="utf-8") as f:
+            f.write(state.reliability_report)
 
         with open("output/reasoning_trace.json", "w", encoding="utf-8") as f:
             json.dump(state.reasoning_trace, f, indent=4)

@@ -1,6 +1,9 @@
 [
-    "Web search completed. 9 claims found.",
+    "Web search completed. 10 claims found.",
     "PDF indexing completed. 494 chunks from 4 PDFs indexed.",
     "Semantic retrieval done. 20 chunks with source metadata prepared.",
-    "Final confidence score: 84.38%"
+    "Document insight validation failed: 1 validation error for DocumentInsight\npage_number\n  Input should be a valid integer, unable to parse string as an integer [type=int_parsing, input_value='Not specified', input_type=str]\n    For further information visit https://errors.pydantic.dev/2.11/v/int_parsing",
+    "Web search completed. 10 claims found.",
+    "Semantic retrieval done. 20 chunks with source metadata prepared.",
+    "Final confidence score: 57.7%"
 ]

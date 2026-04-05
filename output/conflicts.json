@@ -1,1 +1,48 @@
-[]
+[
+    {
+        "issue": "The document insight explicitly states that it 'do[es] not contain information explaining how the Random Forest algorithm works', and that 'the mechanism or methodology of its operation is not described in any of the retrieved evidence'. This directly contradicts numerous web claims that provide detailed explanations of the Random Forest algorithm's mechanism, including its ensemble nature, use of decision trees, random subset selection, splitting criteria (Gini impurity, SSE), and prediction aggregation methods (majority voting, averaging).",
+        "conflicting_sources": [
+            "Document Insight (key_findings)",
+            "https://builtin.com/data-science/random-forest-algorithm",
+            "https://www.analyticsvidhya.com/blog/2021/06/understanding-random-forest/",
+            "https://en.wikipedia.org/wiki/Random_forest",
+            "https://scikit-learn.org/stable/modules/ensemble.html",
+            "https://www.ibm.com/think/topics/bagging",
+            "https://stats.stackexchange.com/questions/264129/what-is-the-difference-between-bagging-and-random-forest-if-only-one-explanatory",
+            "https://www.researchgate.net/post/Decision_Tree_Random_Forest_split-stopping_criteria",
+            "https://www.ibm.com/think/topics/decision-trees",
+            "https://bradleyboehmke.github.io/HOML/random-forest.html",
+            "https://www.geeksforgeeks.org/machine-learning/random-forest-algorithm-in-machine-learning/"
+        ],
+        "severity": "High"
+    },
+    {
+        "issue": "The document insights consistently state that they 'do not contain information explaining how the Random Forest algorithm works' or that 'the passage identifies the algorithm's application areas but does not describe its mechanism or methodology of operation'. This directly contradicts the web claims, which provide detailed explanations of the Random Forest algorithm's mechanism, including its ensemble nature, use of decision trees, random data/feature selection, splitting criteria (Gini impurity, entropy, MSE), and prediction aggregation methods (majority voting, averaging). The web sources offer the very information that the document insights claim is absent from the PDF content.",
+        "conflicting_sources": [
+            "Document Insight (source_file: AgentAI.pdf, page_number: 17, key_findings)",
+            "Document Insight (source_file: AgentAI.pdf, page_number: 10, key_findings)",
+            "Document Insight (source_file: 2404.11584v1.pdf, page_number: 6, key_findings)",
+            "Document Insight (source_file: 2404.11584v1.pdf, page_number: 10, key_findings)",
+            "Document Insight (source_file: AgentAI.pdf, page_number: 16, key_findings)",
+            "Document Insight (source_file: 2308.10848v3.pdf, page_number: 17, key_findings)",
+            "Document Insight (source_file: 2404.11584v1.pdf, page_number: 10, key_findings)",
+            "Document Insight (source_file: AgentAI.pdf, page_number: 10, key_findings)",
+            "Document Insight (source_file: 2508.12752v1.pdf, page_number: 9, key_findings)",
+            "Document Insight (source_file: 2308.10848v3.pdf, page_number: 10, key_findings)",
+            "Document Insight (source_file: 2308.10848v3.pdf, page_number: 4, key_findings)",
+            "Document Insight (source_file: 2308.10848v3.pdf, page_number: 5, key_findings)",
+            "Document Insight (source_file: 2508.12752v1.pdf, page_number: 11, key_findings)",
+            "Document Insight (source_file: 2404.11584v1.pdf, page_number: 11, key_findings)",
+            "Document Insight (source_file: 2508.12752v1.pdf, page_number: 9, key_findings)",
+            "https://builtin.com/data-science/random-forest-algorithm",
+            "https://www.geeksforgeeks.org/machine-learning/random-forest-algorithm-in-machine-learning/",
+            "https://en.wikipedia.org/wiki/Random_forest",
+            "https://sebastianraschka.com/faq/docs/bagging-boosting-rf.html",
+            "https://www.geeksforgeeks.org/machine-learning/gini-impurity-and-entropy-in-decision-tree-ml/",
+            "https://www.atmosp.physics.utoronto.ca/~shahnas/Courses/Machine_Learning_Grad/Lecture_09.pdf",
+            "https://www.causalmlbook.com/ensemble-learning-and-random-forest.html",
+            "https://www.cs.cornell.edu/courses/cs4780/2022sp/notes/LectureNotes21.html"
+        ],
+        "severity": "High"
+    }
+]

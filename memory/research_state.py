@@ -79,4 +79,5 @@ class ResearchState(BaseModel):
 
     # Final outputs
     final_report: str = ""
+    reliability_report: str = ""
     confidence_score: float = 0.0

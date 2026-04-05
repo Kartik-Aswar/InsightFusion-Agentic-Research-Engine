@@ -3,6 +3,7 @@ Streamlit UI for InsightFusion — Agentic AI Deep Research System.
 """
 
 import streamlit as st
+import base64
 import sys
 import os
 import json
@@ -127,7 +128,80 @@ if st.sidebar.button("🗑️ Clear Pipeline Data", use_container_width=True):
     st.sidebar.success("✅ Output, PDFs, and Vector DB fully cleared")
 
 # -------------------------------------------------
-# MAIN TITLE AND RAG INPUT
+# TOP NAVIGATION BAR
+# -------------------------------------------------
+
+nav_selection = st.radio(
+    "Navigation", 
+    ["🏠 Research Engine", "👨‍💻 Developers", "📞 Contact Us"], 
+    horizontal=True, 
+    label_visibility="collapsed"
+)
+
+if nav_selection == "👨‍💻 Developers":
+    st.markdown("<div style='text-align: center;'><h2 class='gradient-text'>Meet the Developers</h2></div>", unsafe_allow_html=True)
+    st.markdown("---")
+    
+    st.write("This project was engineered as a comprehensive demonstration of Multi-Agent Architectures, Deep Research Retrieval-Augmented Generation (RAG), and autonomous conflict resolution protocols.")
+    st.info("The system utilizes the **CrewAI** framework for orchestration, **ChromaDB / Sentence-Transformers** for semantic vector search, and generic LLM bindings via **LiteLLM**.")
+    st.markdown("<br>", unsafe_allow_html=True)
+    
+    col1, col2, col3 = st.columns(3)
+    
+    team = [
+        {"name": "Achyut Shinde", "email": "avshinde018@gmail.com", "prefix": "Achyut Image"},
+        {"name": "Bhavesh Choudhary", "email": "choudharybhavesh191@gmail.com", "prefix": "Bhavesh Image"},
+        {"name": "Kartik Aswar", "email": "kartikaswar03@gmail.com", "prefix": "Kartik Image"}
+    ]
+    
+    cols = [col1, col2, col3]
+    
+    for i, member in enumerate(team):
+        with cols[i]:
+            img_path = None
+            jpg_path = f"assets/team/{member['prefix']}.jpg"
+            png_path = f"assets/team/{member['prefix']}.png"
+            
+            if os.path.exists(jpg_path):
+                img_path = jpg_path
+            elif os.path.exists(png_path):
+                img_path = png_path
+            
+            if img_path:
+                with open(img_path, "rb") as f:
+                    data = f.read()
+                b64 = base64.b64encode(data).decode()
+                ext = img_path.split('.')[-1]
+                src = f"data:image/{ext};base64,{b64}"
+            else:
+                src = "https://via.placeholder.com/300?text=" + member["name"].split()[0]
+                
+            st.markdown(f'''
+                <div style="width: 100%; height: 320px; overflow: hidden; border-radius: 12px; margin-bottom: 12px; box-shadow: 0 4px 6px rgba(0,0,0,0.1);">
+                    <img src="{src}" style="width: 100%; height: 100%; object-fit: cover;">
+                </div>
+            ''', unsafe_allow_html=True)
+            
+            st.markdown(f"#### {member['name']}")
+            st.markdown(f"**✉️ {member['email']}**")
+            
+    st.stop()
+
+elif nav_selection == "📞 Contact Us":
+    st.markdown("<div style='text-align: center;'><h2 class='gradient-text'>Contact & Support</h2></div>", unsafe_allow_html=True)
+    st.markdown("---")
+    st.markdown("### Reach Out for Inquiries")
+    st.write("For questions regarding the **InsightFusion** framework, API integrations, or academic implementations, please reach out securely.")
+    
+    with st.container(border=True):
+        st.text_input("Name")
+        st.text_input("Email")
+        st.text_area("Message")
+        st.button("Send Message", type="primary")
+    st.stop()
+
+# -------------------------------------------------
+# MAIN TITLE AND RAG INPUT (Home Page)
 # -------------------------------------------------
 
 st.markdown("""
@@ -195,7 +269,7 @@ summary_path = "output/summary.json"
 if os.path.exists(report_path):
     st.write("") # Spacer
 
-    tabs = st.tabs(["📝 Final Report", "📊 Research Summary", "🧠 Reasoning Matrix", "⚡ Conflict Audits"])
+    tabs = st.tabs(["📝 Final Report", "📊 Research Summary", "🛡️ Reliability & References", "⚡ Conflict Audits"])
 
     # REPORT TAB
     with tabs[0]:
@@ -237,8 +311,15 @@ if os.path.exists(report_path):
             with st.expander("Raw System Output Json"):
                 st.json(summary)
 
-    # REASONING TRACE TAB
+    # RELIABILITY AND REASONING TRACE TAB
     with tabs[2]:
+        rel_path = "output/reliability_report.txt"
+        if os.path.exists(rel_path):
+            with open(rel_path, "r", encoding="utf-8") as f:
+                rel_data = f.read()
+            st.markdown(rel_data)
+            st.divider()
+
         if os.path.exists(trace_path):
             with open(trace_path, encoding="utf-8") as f:
                 trace = json.load(f)
@@ -270,4 +351,4 @@ if os.path.exists(report_path):
                     else:
                         st.info(f"**Low Severity Conflict:** {issue}\n\n**Sources Involved:** {sources}")
             else:
-                st.success("✅ No structural conflicts detected across evidence sources during this research run.")
+                st.success(" No structural conflicts detected across evidence sources during this research run.")
